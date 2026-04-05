@@ -40,10 +40,11 @@ import json
 import os
 from functools import lru_cache
 
+import numpy as np
 from sqlalchemy import create_engine, text
 
 from models.customer import (
-    Category, CustomerProfile, Segment, SessionTiming,
+    Category, CustomerProfile, HeatmapData, Segment, SessionTiming,
 )
 
 
@@ -220,6 +221,143 @@ def get_recent_runs(limit: int = 5) -> list[dict]:
             }
         result.append(run)
     return result
+
+
+# ── Session heatmap ───────────────────────────────────────────────────────────
+
+# Day-of-week activity weights per session timing type.
+# Index 0 = Monday … 6 = Sunday.
+_DAY_WEIGHTS: dict[SessionTiming, list[float]] = {
+    SessionTiming.MORNING:    [0.20, 0.20, 0.20, 0.20, 0.15, 0.03, 0.02],
+    SessionTiming.LUNCH:      [0.20, 0.20, 0.20, 0.20, 0.15, 0.03, 0.02],
+    SessionTiming.AFTERNOON:  [0.18, 0.18, 0.20, 0.18, 0.15, 0.06, 0.05],
+    SessionTiming.EVENING:    [0.15, 0.15, 0.18, 0.18, 0.18, 0.08, 0.08],
+    SessionTiming.LATE_NIGHT: [0.14, 0.14, 0.16, 0.16, 0.16, 0.12, 0.12],
+    SessionTiming.VARIED:     [0.143, 0.143, 0.143, 0.143, 0.143, 0.143, 0.142],
+    SessionTiming.WEEKEND:    [0.05, 0.05, 0.05, 0.05, 0.05, 0.375, 0.375],
+}
+
+# Map heatmap display slots → the hours of day they cover.
+_SLOT_HOURS: list[tuple[str, list[int]]] = [
+    ("6am",  [6, 7, 8]),
+    ("9am",  [9, 10, 11]),
+    ("12pm", [12, 13, 14]),
+    ("3pm",  [15, 16, 17]),
+    ("6pm",  [18, 19, 20]),
+    ("9pm",  [21]),
+    ("12am", [22, 23, 0, 1, 2]),
+]
+
+
+def _ensure_session_counts_table() -> None:
+    with _engine.begin() as conn:
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS session_counts (
+                hour        INTEGER NOT NULL,
+                day_of_week INTEGER NOT NULL,
+                count       INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (hour, day_of_week)
+            )
+        """))
+
+
+def seed_session_counts(customers: list[CustomerProfile], force: bool = False) -> None:
+    """
+    Populate session_counts from the customer list.
+
+    Each customer contributes sessions proportional to their purchase_freq
+    (used as a proxy for browsing activity) spread across their session_hours
+    and weighted by day-of-week patterns derived from their timing type.
+
+    The table is only seeded once unless force=True.
+    """
+    _ensure_session_counts_table()
+
+    with _engine.connect() as conn:
+        row_count = conn.execute(text("SELECT COUNT(*) FROM session_counts")).scalar()
+
+    if row_count and not force:
+        return  # already seeded
+
+    # Accumulate counts into a (24 × 7) numpy array
+    counts = np.zeros((24, 7), dtype=np.float64)
+
+    for c in customers:
+        day_w = _DAY_WEIGHTS[c.timing]
+        # Sessions per month ≈ purchase_freq × 10 (browsing is ~10× purchasing)
+        sessions_per_hour = c.purchase_freq * 10 / max(len(c.session_hours), 1)
+        for hour in c.session_hours:
+            for day, w in enumerate(day_w):
+                counts[hour, day] += sessions_per_hour * w
+
+    # Write to DB — upsert so force=True works cleanly
+    rows = [
+        {"hour": int(h), "day": int(d), "count": int(round(counts[h, d]))}
+        for h in range(24)
+        for d in range(7)
+        if counts[h, d] > 0
+    ]
+
+    with _engine.begin() as conn:
+        conn.execute(text("DELETE FROM session_counts"))
+        conn.execute(
+            text("INSERT INTO session_counts (hour, day_of_week, count) VALUES (:hour, :day, :count)"),
+            rows,
+        )
+
+
+def build_heatmap_from_db() -> HeatmapData:
+    """
+    Query session_counts and return a HeatmapData with a 7×7 intensity
+    matrix (time slots × days) scaled to 1–9.
+
+    Falls back to a flat mid-range matrix if the table is empty.
+    """
+    _ensure_session_counts_table()
+
+    with _engine.connect() as conn:
+        rows = conn.execute(
+            text("SELECT hour, day_of_week, count FROM session_counts")
+        ).fetchall()
+
+    if not rows:
+        # Fallback: flat matrix — surface the gap in monitoring
+        matrix = [[5] * 7 for _ in range(7)]
+        return HeatmapData(
+            time_labels=["6am", "9am", "12pm", "3pm", "6pm", "9pm", "12am"],
+            day_labels=["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+            matrix=matrix,
+        )
+
+    # Build lookup: raw[(hour, day)] = count
+    raw: dict[tuple[int, int], int] = {}
+    for r in rows:
+        raw[(r.hour, r.day_of_week)] = r.count
+
+    # Aggregate by display slot
+    slot_matrix: list[list[float]] = []
+    for _, hours in _SLOT_HOURS:
+        row = []
+        for day in range(7):
+            total = sum(raw.get((h, day), 0) for h in hours)
+            row.append(float(total))
+        slot_matrix.append(row)
+
+    # Normalise to 1–9
+    flat = [v for row in slot_matrix for v in row]
+    lo, hi = min(flat), max(flat)
+    span = hi - lo if hi > lo else 1.0
+
+    scaled = [
+        [int(round(1 + (v - lo) / span * 8)) for v in row]
+        for row in slot_matrix
+    ]
+
+    return HeatmapData(
+        time_labels=["6am", "9am", "12pm", "3pm", "6pm", "9pm", "12am"],
+        day_labels=["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+        matrix=scaled,
+    )
 
 
 def record_outcome(

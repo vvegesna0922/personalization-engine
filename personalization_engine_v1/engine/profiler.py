@@ -24,6 +24,7 @@ from models.customer import (
     OverviewMetrics, CategoryBreakdown, HeatmapData,
     SimulationInputs, SimulationResult, DashboardData,
 )
+from data.db import build_heatmap_from_db, seed_session_counts
 from engine.predictor import predict_all
 
 
@@ -85,23 +86,10 @@ CONTENT_MATRIX: list[ContentRow] = [
 
 # ── Heatmap builder ───────────────────────────────────────────────────────────
 
-# Intensity matrix [time_slot_index][day_index]  values 1–9
-_HEATMAP_RAW: list[list[int]] = [
-    [2,2,3,3,2,1,1],   # 6am
-    [2,3,4,4,3,2,2],   # 9am
-    [4,5,8,7,5,3,2],   # 12pm
-    [3,4,6,5,4,3,2],   # 3pm
-    [3,4,7,6,7,5,4],   # 6pm
-    [5,6,9,8,9,7,6],   # 9pm
-    [7,8,9,9,8,7,9],   # 12am
-]
-
-def build_heatmap() -> HeatmapData:
-    return HeatmapData(
-        time_labels=["6am", "9am", "12pm", "3pm", "6pm", "9pm", "12am"],
-        day_labels=["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
-        matrix=_HEATMAP_RAW,
-    )
+def build_heatmap(customers: list[CustomerProfile]) -> HeatmapData:
+    """Seed session_counts from customer data (no-op if already seeded), then query."""
+    seed_session_counts(customers)
+    return build_heatmap_from_db()
 
 
 # ── KPI / Overview ────────────────────────────────────────────────────────────
@@ -334,7 +322,7 @@ def build_dashboard(
     return DashboardData(
         overview=compute_overview(customers),
         category=compute_category_breakdown(customers),
-        heatmap=build_heatmap(),
+        heatmap=build_heatmap(customers),
         segments=compute_segments(),
         customers=customers,
         predictions=predictions,
