@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Behavioral Personalization Engine</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#1a1a1a;background:#f5f4f0;font-size:14px;min-height:100vh}
+.app{padding:24px;max-width:960px;margin:0 auto}
+.tabs{display:flex;gap:4px;border-bottom:1px solid #e0dfd8;margin-bottom:20px}
+.tab{padding:8px 16px;font-size:13px;border:none;background:transparent;color:#73726c;cursor:pointer;border-bottom:2px solid transparent;transition:all .2s}
+.tab.active{color:#1a1a1a;border-bottom-color:#1a1a1a;font-weight:500}
+.tab:hover:not(.active){color:#1a1a1a}
+.section-title{font-size:11px;font-weight:500;letter-spacing:.08em;text-transform:uppercase;color:#73726c;margin-bottom:12px}
+.card{background:#fff;border:0.5px solid #e0dfd8;border-radius:12px;padding:16px}
+.metric-card{background:#f5f4f0;border-radius:8px;padding:12px 14px}
+.metric-label{font-size:11px;color:#73726c;margin-bottom:4px}
+.metric-val{font-size:20px;font-weight:500}
+.metric-sub{font-size:11px;color:#73726c;margin-top:2px}
+.grid-4{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.grid-3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.grid-2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:500}
+.badge-purple{background:#EEEDFE;color:#3C3489}
+.badge-green{background:#EAF3DE;color:#3B6D11}
+.badge-amber{background:#FAEEDA;color:#854F0B}
+.badge-red{background:#FCEBEB;color:#A32D2D}
+.badge-gray{background:#f5f4f0;color:#73726c}
+.badge-blue{background:#E3EFF9;color:#185FA5}
+.customer-row{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:0.5px solid #e0dfd8;cursor:pointer;transition:background .15s;border-radius:8px}
+.customer-row:last-child{border-bottom:none}
+.customer-row:hover{background:#f5f4f0;padding:10px 10px;margin:0 -10px}
+.avatar{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:500;flex-shrink:0}
+.bar-bg{background:#e0dfd8;border-radius:4px;height:6px;flex:1;overflow:hidden}
+.bar-fill{height:100%;border-radius:4px;transition:width .4s ease}
+select{background:#fff;border:0.5px solid #e0dfd8;border-radius:8px;padding:6px 10px;font-size:13px;color:#1a1a1a;width:100%}
+.rule-row{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:0.5px solid #e0dfd8;font-size:13px;flex-wrap:wrap}
+.rule-row:last-child{border-bottom:none}
+.rule-if{color:#73726c;min-width:28px;font-size:11px;font-weight:600}
+.rule-cond{background:#f5f4f0;border-radius:8px;padding:3px 8px;font-size:12px;font-family:monospace}
+.rule-then{color:#73726c;min-width:38px;font-size:11px;font-weight:600}
+.rule-action{color:#185FA5;font-size:12px}
+.heatmap-grid{display:grid;grid-template-columns:40px repeat(7,1fr);gap:2px;font-size:10px}
+.heatmap-cell{border-radius:3px;height:22px}
+.toggle-btn{padding:6px 14px;font-size:12px;border:0.5px solid #e0dfd8;border-radius:20px;background:transparent;cursor:pointer;color:#73726c;transition:all .2s}
+.toggle-btn.on{background:#1a1a1a;color:#fff;border-color:#1a1a1a}
+.panel{display:none}
+.panel.active{display:block}
+.campaign-card{border:0.5px solid #e0dfd8;border-radius:12px;padding:14px;margin-bottom:10px;position:relative;overflow:hidden;background:#fff}
+.campaign-card::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px}
+.campaign-card.send::before{background:#3B6D11}
+.campaign-card.wait::before{background:#854F0B}
+.campaign-card.flag::before{background:#A32D2D}
+.conf-bar{height:4px;border-radius:2px;background:#e0dfd8;overflow:hidden;margin-top:4px}
+.conf-fill{height:100%;border-radius:2px;background:#534AB7;transition:width .4s ease}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+    <div>
+      <div style="font-size:20px;font-weight:500">Behavioral Personalization Engine</div>
+      <div style="font-size:12px;color:#73726c;margin-top:3px">Customer segmentation · Rule-based targeting · Engagement prediction</div>
+    </div>
+    <button class="toggle-btn on" id="liveBtn" onclick="toggleLive()">● Live</button>
+  </div>
+
+  <div class="tabs">
+    <button class="tab active" onclick="showPanel('metrics',this)">Metrics</button>
+    <button class="tab" onclick="showPanel('users',this)">Users &amp; Campaigns</button>
+  </div>
+
+  <!-- ═══════════════ METRICS ═══════════════ -->
+  <div id="metrics" class="panel active">
+
+    <!-- KPIs row 1 -->
+    <div class="grid-4" style="margin-bottom:10px">
+      <div class="metric-card">
+        <div class="metric-label">Total Customers</div>
+        <div class="metric-val">{{ "{:,}".format(overview.total_customers) }}</div>
+        <div class="metric-sub">across 6 segments</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">Avg Order Value</div>
+        <div class="metric-val" id="mc-aov">${{ "%.2f"|format(overview.avg_order_value) }}</div>
+        <div class="metric-sub">↑ 7% vs last month</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">Engagement Score</div>
+        <div class="metric-val" id="mc-eng">{{ overview.engagement_score }}</div>
+        <div class="metric-sub">0–100 composite</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">Sale Dependency</div>
+        <div class="metric-val">{{ overview.sale_dependency_pct }}%</div>
+        <div class="metric-sub">only buy on discount</div>
+      </div>
+    </div>
+
+    <!-- KPIs row 2 — prediction accuracy -->
+    <div class="grid-2" style="margin-bottom:16px">
+      <div class="metric-card" style="background:#EAF3DE">
+        <div class="metric-label" style="color:#3B6D11">Segment Prediction Accuracy</div>
+        <div class="metric-val" style="color:#3B6D11">{{ prediction_accuracy }}%</div>
+        <div class="metric-sub" style="color:#3B6D11">customers whose behavior matches their assigned segment</div>
+      </div>
+      <div class="metric-card" style="background:#FAEEDA">
+        <div class="metric-label" style="color:#854F0B">Behavioral Drift</div>
+        <div class="metric-val" style="color:#854F0B">{{ (100 - prediction_accuracy)|round(1) }}%</div>
+        <div class="metric-sub" style="color:#854F0B">customers whose behavior suggests a different segment</div>
+      </div>
+    </div>
+
+    <!-- Segment distribution + heatmap -->
+    <div class="grid-2" style="margin-bottom:16px">
+      <div class="card">
+        <div class="section-title">Segment Distribution</div>
+        {% for seg in segments %}
+        <div style="margin-bottom:10px">
+          <div style="display:flex;justify-content:space-between;margin-bottom:4px;font-size:12px">
+            <span style="display:flex;align-items:center;gap:6px">
+              <span style="width:8px;height:8px;border-radius:50%;background:{{ seg.color }};display:inline-block"></span>
+              {{ seg.name.value }}
+            </span>
+            <span style="color:#73726c">{{ "{:,}".format(seg.count) }} · {{ seg.percentage }}%</span>
+          </div>
+          <div class="bar-bg">
+            <div class="bar-fill" style="width:{{ (seg.percentage * 4)|int }}%;background:{{ seg.color }}"></div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+
+      <div class="card">
+        <div class="section-title">Session Timing Heatmap</div>
+        <div class="heatmap-grid">
+          <div></div>
+          {% for day in heatmap.day_labels %}
+          <div style="text-align:center;color:#73726c;padding:2px 0;font-size:10px">{{ day }}</div>
+          {% endfor %}
+          {% for ti, time in enumerate(heatmap.time_labels) %}
+          <div style="color:#73726c;display:flex;align-items:center;font-size:10px">{{ time }}</div>
+          {% for di in range(7) %}
+          <div class="heatmap-cell"
+               style="background:rgba(83,74,183,{{ heatmap_opacities[ti][di] }})"></div>
+          {% endfor %}
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+
+    <!-- Category breakdown -->
+    <div class="card" style="margin-bottom:16px">
+      <div class="section-title">Category Breakdown</div>
+      <div class="grid-3">
+        <div>
+          <div style="display:flex;justify-content:space-between;margin-bottom:4px;font-size:12px">
+            <span>Streetwear</span><span style="color:#73726c">{{ category.streetwear_pct }}%</span>
+          </div>
+          <div class="bar-bg"><div class="bar-fill" style="width:{{ category.streetwear_pct|int }}%;background:#534AB7"></div></div>
+        </div>
+        <div>
+          <div style="display:flex;justify-content:space-between;margin-bottom:4px;font-size:12px">
+            <span>Athletic</span><span style="color:#73726c">{{ category.athletic_pct }}%</span>
+          </div>
+          <div class="bar-bg"><div class="bar-fill" style="width:{{ category.athletic_pct|int }}%;background:#0F6E56"></div></div>
+        </div>
+        <div>
+          <div style="display:flex;justify-content:space-between;margin-bottom:4px;font-size:12px">
+            <span>Formal</span><span style="color:#73726c">{{ category.formal_pct }}%</span>
+          </div>
+          <div class="bar-bg"><div class="bar-fill" style="width:{{ category.formal_pct|int }}%;background:#3c3489"></div></div>
+        </div>
+      </div>
+      <div style="margin-top:14px;display:grid;grid-template-columns:repeat(3,1fr);gap:8px;text-align:center">
+        <div style="font-size:11px;color:#73726c;background:#f5f4f0;padding:8px;border-radius:8px">
+          Avg basket: <span style="font-weight:500;color:#1a1a1a">${{ category.streetwear_avg_basket|int }}</span>
+        </div>
+        <div style="font-size:11px;color:#73726c;background:#f5f4f0;padding:8px;border-radius:8px">
+          Avg basket: <span style="font-weight:500;color:#1a1a1a">${{ category.athletic_avg_basket|int }}</span>
+        </div>
+        <div style="font-size:11px;color:#73726c;background:#f5f4f0;padding:8px;border-radius:8px">
+          Avg basket: <span style="font-weight:500;color:#1a1a1a">${{ category.formal_avg_basket|int }}</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Rules -->
+    <div class="grid-2" style="margin-bottom:16px">
+      <div class="card">
+        <div class="section-title">Timing Rules</div>
+        {% for rule in timing_rules %}
+        <div class="rule-row">
+          <span class="rule-if">IF</span>
+          <span class="rule-cond">{{ rule.condition }}</span>
+          <span class="rule-then">THEN</span>
+          <span class="rule-action">{{ rule.action }}</span>
+        </div>
+        {% endfor %}
+      </div>
+      <div class="card">
+        <div class="section-title">Segment Rules</div>
+        {% for rule in segment_rules %}
+        <div class="rule-row">
+          <span class="rule-if">IF</span>
+          <span class="rule-cond">{{ rule.condition }}</span>
+          <span class="rule-then">THEN</span>
+          <span class="rule-action">{{ rule.action }}</span>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- Content matrix -->
+    <div class="card">
+      <div class="section-title">Content Selection Matrix</div>
+      <table style="width:100%;font-size:12px;border-collapse:collapse">
+        <thead>
+          <tr style="border-bottom:0.5px solid #e0dfd8">
+            <th style="text-align:left;padding:6px 0;font-weight:500;color:#73726c">Segment</th>
+            <th style="padding:6px;font-weight:500;color:#73726c">Send Time</th>
+            <th style="padding:6px;font-weight:500;color:#73726c">Channel</th>
+            <th style="padding:6px;font-weight:500;color:#73726c">Offer</th>
+            <th style="text-align:right;padding:6px 0;font-weight:500;color:#73726c">Pred. CTR</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in content_matrix %}
+          <tr style="border-bottom:0.5px solid #e0dfd8">
+            <td style="padding:8px 0;font-size:12px">{{ row.segment.value }}</td>
+            <td style="padding:8px;text-align:center"><span class="badge badge-gray">{{ row.send_time }}</span></td>
+            <td style="padding:8px;text-align:center"><span class="badge badge-purple">{{ row.channel.value }}</span></td>
+            <td style="padding:8px;font-size:12px;color:#73726c">{{ row.offer }}</td>
+            <td style="padding:8px 0;text-align:right;font-weight:500;color:#3B6D11">{{ row.predicted_ctr }}%</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+  </div><!-- /metrics -->
+
+  <!-- ═══════════════ USERS & CAMPAIGNS ═══════════════ -->
+  <div id="users" class="panel">
+
+    <!-- Campaign decisions -->
+    <div style="margin-bottom:20px">
+      <div class="section-title" style="margin-bottom:12px">Campaign Decisions · Next 24 Hours</div>
+      {% for c in campaigns %}
+      <div class="campaign-card {{ c.action.value }}">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px">
+          <div style="display:flex;align-items:center;gap:8px">
+            <span class="badge {{ c.action | badge_class }}">{{ c.action.value | upper }}</span>
+            <span style="font-weight:500;font-size:13px">{{ c.segment.value }}</span>
+          </div>
+          {% if c.predicted_ctr %}
+          <span style="font-size:12px;color:#73726c">
+            Pred. CTR: <span style="font-weight:500;color:#3B6D11">{{ c.predicted_ctr }}%</span>
+          </span>
+          {% endif %}
+        </div>
+        <div style="font-size:12px;color:#73726c;margin-bottom:4px">⏰ {{ c.send_window }}</div>
+        <div style="font-size:13px;line-height:1.6">{{ c.message }}</div>
+      </div>
+      {% endfor %}
+    </div>
+
+    <!-- Customer list -->
+    <div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <div class="section-title" style="margin-bottom:0">All Users</div>
+        <div style="display:flex;gap:6px">
+          <button class="toggle-btn" id="driftBtn" onclick="toggleDriftFilter()" style="font-size:11px;padding:4px 10px">Show drift only</button>
+        </div>
+      </div>
+      <div style="display:flex;gap:10px;margin-bottom:14px">
+        <select onchange="filterCustomers(this.value)" style="width:180px">
+          <option value="all">All Segments</option>
+          {% for seg in segments %}
+          <option value="{{ seg.name.value }}">{{ seg.name.value }}</option>
+          {% endfor %}
+        </select>
+        <select onchange="sortCustomers(this.value)" style="width:180px">
+          <option value="score">Sort: Engagement Score</option>
+          <option value="aov">Sort: Order Value</option>
+          <option value="freq">Sort: Purchase Frequency</option>
+          <option value="confidence">Sort: Prediction Confidence</option>
+        </select>
+      </div>
+      <div class="card" style="padding:12px 14px">
+        <div id="customer-list"></div>
+      </div>
+      <div id="profile-detail" style="margin-top:12px;display:none"></div>
+    </div>
+
+  </div><!-- /users -->
+
+</div><!-- /app -->
+
+<script>
+const CUSTOMERS = [
+  {% for c in customers %}
+  {
+    id: {{ c.id }},
+    name: {{ c.name | tojson }},
+    initials: {{ c.initials | tojson }},
+    color: {{ c.color | tojson }},
+    segment: {{ c.segment.value | tojson }},
+    timing: {{ c.timing.value | tojson }},
+    sessionHours: {{ c.session_hours | tojson }},
+    freq: {{ c.purchase_freq }},
+    aov: {{ c.avg_order_value }},
+    categories: {{ c.categories | map(attribute='value') | list | tojson }},
+    sizeConsistent: {{ c.size_consistent }},
+    discountUsage: {{ c.discount_usage }},
+    score: {{ c.engagement_score }},
+    isLateNight: {{ c.is_late_night | tojson }},
+    isLunch: {{ c.is_lunch_browser | tojson }},
+    isSaleOnly: {{ c.is_sale_only | tojson }},
+    isFullPrice: {{ c.is_full_price_buyer | tojson }},
+    discountLabel: {{ c.discount_label | tojson }},
+    predictedSegment: {{ predictions[c.id].predicted_segment.value | tojson }},
+    confidence: {{ predictions[c.id].confidence }},
+    matchesActual: {{ predictions[c.id].matches_actual | tojson }},
+    bestChannel: {{ predictions[c.id].best_channel.value | tojson }},
+    bestSendTime: {{ predictions[c.id].best_send_time | tojson }},
+    offer: {{ predictions[c.id].offer | tojson }},
+    action: {{ predictions[c.id].action | tojson }},
+    rationale: {{ predictions[c.id].rationale | tojson }},
+    allScores: {{ predictions[c.id].all_scores | tojson }},
+  }{% if not loop.last %},{% endif %}
+  {% endfor %}
+];
+
+let filteredCustomers = [...CUSTOMERS];
+let sortKey = "score";
+let driftOnly = false;
+let liveActive = true;
+let liveInterval;
+
+function showPanel(id, btn) {
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  if (btn) btn.classList.add('active');
+}
+
+function scoreColor(s) {
+  if (s >= 80) return "#3B6D11";
+  if (s >= 60) return "#185FA5";
+  if (s >= 40) return "#854F0B";
+  return "#A32D2D";
+}
+
+function confColor(c) {
+  if (c >= 75) return "#3B6D11";
+  if (c >= 50) return "#185FA5";
+  if (c >= 30) return "#854F0B";
+  return "#A32D2D";
+}
+
+function buildCustomerList() {
+  let list = [...filteredCustomers];
+  if (driftOnly) list = list.filter(c => !c.matchesActual);
+  list.sort((a, b) => {
+    if (sortKey === "score")      return b.score - a.score;
+    if (sortKey === "aov")        return b.aov - a.aov;
+    if (sortKey === "confidence") return b.confidence - a.confidence;
+    return b.freq - a.freq;
+  });
+  document.getElementById('customer-list').innerHTML = list.length === 0
+    ? '<div style="text-align:center;padding:20px;color:#73726c;font-size:13px">No customers match this filter.</div>'
+    : list.map(c => `
+    <div class="customer-row" onclick="showDetail(${c.id})">
+      <div class="avatar" style="background:${c.color}22;color:${c.color}">${c.initials}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:500;font-size:13px">${c.name}</div>
+        <div style="font-size:11px;color:#73726c">${c.segment}</div>
+      </div>
+      <div style="text-align:right;font-size:12px;color:#73726c;min-width:70px">
+        AOV: <span style="color:#1a1a1a;font-weight:500">$${c.aov}</span>
+      </div>
+      <div style="text-align:right;font-size:12px;color:#73726c;min-width:54px">${c.freq.toFixed(1)}×/mo</div>
+      <div style="min-width:90px">
+        <div style="display:flex;align-items:center;gap:6px">
+          <div class="bar-bg" style="width:60px">
+            <div class="bar-fill" style="width:${c.score}%;background:${scoreColor(c.score)}"></div>
+          </div>
+          <span style="font-size:12px;font-weight:500;color:${scoreColor(c.score)}">${c.score}</span>
+        </div>
+      </div>
+      <div style="min-width:90px;text-align:right">
+        ${c.matchesActual
+          ? '<span class="badge badge-green" style="font-size:10px">✓ Match</span>'
+          : '<span class="badge badge-amber" style="font-size:10px">⚠ Drift</span>'}
+        <div style="font-size:10px;color:#73726c;margin-top:2px">${c.confidence}% conf.</div>
+      </div>
+    </div>`).join('');
+}
+
+function showDetail(id) {
+  const c = CUSTOMERS.find(x => x.id === id);
+  const el = document.getElementById('profile-detail');
+  el.style.display = 'block';
+
+  const driftWarning = !c.matchesActual ? `
+    <div style="background:#FAEEDA;border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:12px;color:#854F0B;line-height:1.6">
+      <span style="font-weight:500">⚠ Behavioral Drift Detected</span> —
+      This customer is assigned to <strong>${c.segment}</strong> but their signals
+      most closely match <strong>${c.predictedSegment}</strong>.
+      Consider re-segmenting or testing a different strategy.
+    </div>` : '';
+
+  const scoreRows = Object.entries(c.allScores)
+    .sort((a,b) => b[1] - a[1])
+    .map(([seg, score]) => `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <span style="font-size:11px;color:#73726c;min-width:140px">${seg}</span>
+        <div style="flex:1;margin:0 8px">
+          <div class="bar-bg">
+            <div class="bar-fill" style="width:${score}%;background:#534AB7"></div>
+          </div>
+        </div>
+        <span style="font-size:11px;font-weight:500;min-width:30px;text-align:right">${score}</span>
+      </div>`).join('');
+
+  el.innerHTML = `
+  <div class="card">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+      <div class="avatar" style="width:44px;height:44px;background:${c.color}22;color:${c.color};font-size:14px">${c.initials}</div>
+      <div>
+        <div style="font-size:16px;font-weight:500">${c.name}</div>
+        <div style="font-size:12px;color:#73726c">${c.segment} · Engagement score
+          <span style="font-weight:500;color:${scoreColor(c.score)}">${c.score}/100</span>
+        </div>
+      </div>
+    </div>
+
+    ${driftWarning}
+
+    <div class="grid-4" style="margin-bottom:14px">
+      <div class="metric-card"><div class="metric-label">Avg Order Value</div><div class="metric-val">$${c.aov}</div></div>
+      <div class="metric-card"><div class="metric-label">Purchase Freq.</div><div class="metric-val">${c.freq.toFixed(1)}×</div><div class="metric-sub">per month</div></div>
+      <div class="metric-card"><div class="metric-label">Size Consistency</div><div class="metric-val">${Math.round(c.sizeConsistent*100)}%</div></div>
+      <div class="metric-card"><div class="metric-label">Discount Usage</div><div class="metric-val">${Math.round(c.discountUsage*100)}%</div></div>
+    </div>
+
+    <div class="grid-2" style="margin-bottom:14px">
+      <div>
+        <div class="section-title">Behavioral Signals</div>
+        <div style="font-size:12px;display:flex;flex-direction:column;gap:6px">
+          <div style="display:flex;justify-content:space-between"><span style="color:#73726c">Session timing</span><span>${c.timing}</span></div>
+          <div style="display:flex;justify-content:space-between"><span style="color:#73726c">Active hours</span><span>${c.sessionHours.map(h=>h+':00').join(', ')}</span></div>
+          <div style="display:flex;justify-content:space-between"><span style="color:#73726c">Categories</span><span>${c.categories.join(', ')}</span></div>
+          <div style="display:flex;justify-content:space-between"><span style="color:#73726c">Discount behavior</span><span>${c.discountLabel}</span></div>
+        </div>
+      </div>
+      <div>
+        <div class="section-title">Segment Score Breakdown</div>
+        ${scoreRows}
+        <div style="font-size:10px;color:#73726c;margin-top:4px">${c.rationale}</div>
+      </div>
+    </div>
+
+    <div style="border-top:0.5px solid #e0dfd8;padding-top:14px">
+      <div class="section-title">Predicted Best-Fit Strategy</div>
+      <div style="background:#f5f4f0;border-radius:10px;padding:12px;margin-bottom:10px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          <span class="badge badge-purple">${c.predictedSegment}</span>
+          <div style="flex:1">
+            <div class="conf-bar"><div class="conf-fill" style="width:${c.confidence}%;background:${confColor(c.confidence)}"></div></div>
+          </div>
+          <span style="font-size:11px;font-weight:500;color:${confColor(c.confidence)}">${c.confidence}% confidence</span>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px">
+          <div style="text-align:center;background:#fff;border-radius:8px;padding:8px">
+            <div style="font-size:10px;color:#73726c;margin-bottom:2px">Channel</div>
+            <div style="font-size:12px;font-weight:500">${c.bestChannel}</div>
+          </div>
+          <div style="text-align:center;background:#fff;border-radius:8px;padding:8px">
+            <div style="font-size:10px;color:#73726c;margin-bottom:2px">Send Time</div>
+            <div style="font-size:12px;font-weight:500">${c.bestSendTime}</div>
+          </div>
+          <div style="text-align:center;background:#fff;border-radius:8px;padding:8px">
+            <div style="font-size:10px;color:#73726c;margin-bottom:2px">Offer</div>
+            <div style="font-size:12px;font-weight:500">${c.offer}</div>
+          </div>
+        </div>
+        <div style="font-size:12px;color:#73726c;line-height:1.7">${c.action}</div>
+      </div>
+    </div>
+  </div>`;
+
+  el.scrollIntoView({behavior:'smooth', block:'nearest'});
+}
+
+function filterCustomers(seg) {
+  filteredCustomers = seg === 'all' ? [...CUSTOMERS] : CUSTOMERS.filter(c => c.segment === seg);
+  buildCustomerList();
+}
+function sortCustomers(k) { sortKey = k; buildCustomerList(); }
+function toggleDriftFilter() {
+  driftOnly = !driftOnly;
+  const btn = document.getElementById('driftBtn');
+  btn.classList.toggle('on', driftOnly);
+  btn.textContent = driftOnly ? 'Show all' : 'Show drift only';
+  buildCustomerList();
+}
+
+function toggleLive() {
+  liveActive = !liveActive;
+  const btn = document.getElementById('liveBtn');
+  btn.classList.toggle('on', liveActive);
+  btn.textContent = liveActive ? '● Live' : '○ Paused';
+  liveActive ? startLiveTick() : clearInterval(liveInterval);
+}
+function startLiveTick() {
+  liveInterval = setInterval(() => {
+    const e1 = document.getElementById('mc-eng');
+    const e2 = document.getElementById('mc-aov');
+    if (e1) e1.textContent = (65 + Math.random() * 8).toFixed(1);
+    if (e2) e2.textContent = '$' + (89 + Math.random() * 12).toFixed(2);
+  }, 2400);
+}
+
+buildCustomerList();
+startLiveTick();
+</script>
+</body>
+</html>
